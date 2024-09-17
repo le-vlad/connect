@@ -31,6 +31,8 @@ const (
 	statusTickerDuration = time.Second * 30
 	topicMetaKey         = "__connect_topic"
 	keyMetaKey           = "__connect_key"
+
+	sharedGlobalRedpandaClientKey = "__redpanda_global"
 )
 
 // TopicLoggerFields returns the topic logger config fields.
@@ -293,11 +295,13 @@ type franzTopicLoggerWriter struct {
 	client *kgo.Client
 
 	log *service.Logger
+	mgr *service.Resources
 }
 
 func newTopicLoggerWriterFromConfig(conf *service.ParsedConfig, log *service.Logger) (*franzTopicLoggerWriter, error) {
 	f := franzTopicLoggerWriter{
 		log: log,
+		mgr: conf.Resources(),
 	}
 
 	if !conf.Contains("seed_brokers") {
@@ -429,6 +433,9 @@ func (f *franzTopicLoggerWriter) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := setSharedClient(sharedGlobalRedpandaClientKey, cl, f.mgr); err != nil {
+		return fmt.Errorf("failed to store global redpanda client: %w", err)
+	}
 
 	f.client = cl
 	return nil
@@ -471,6 +478,7 @@ func (f *franzTopicLoggerWriter) disconnect() {
 	}
 	f.client.Close()
 	f.client = nil
+	_, _ = popSharedClient(sharedGlobalRedpandaClientKey, f.mgr)
 }
 
 func (f *franzTopicLoggerWriter) Close(ctx context.Context) error {
